@@ -1,0 +1,76 @@
+---
+title: "Plotting binary data"
+author: "Elisa Verhofstadt"
+date: "2023-05-18"
+output: html_document
+---
+
+```{r}
+library(readr)
+setwd("C:/Users/elisa/Mijn Drive/First Master year 2022 - 2023/Semester 2/Project - Multivariate and Hierarchical data/Project discovering associations/Final report")
+count_data_G3 <- read_csv("count_data_G3.csv")
+
+count_data_G3_matrix <- na.omit(as.matrix(count_data_G3))
+bin_data_G3 <- NULL
+
+for (i in 1:nrow(count_data_G3_matrix)){
+  # The maximum number of days is 25 so we have 26 rows (on day 26 all roses are dead)
+  mx = matrix(c(count_data_G3_matrix[i, ], 1), ncol=8, nrow=30, byrow=T)
+  # Every day after the day the rose dies, the binary indicator is set to 0
+  mx[(mx[1,7] + 1) : 30, 8] = 0
+  mx[, 7] = 1:30
+  bin_data_G3 = rbind(bin_data_G3, mx)
+}
+bin_data_G3 = as.data.frame(bin_data_G3)
+colnames(bin_data_G3) = c("subplotID", "flowerID", "garden","species", "rater", "compound", "days", "fresh")
+
+
+names_df <- data.frame(compound = c(1:15),
+                       name = c("Distilled water",
+                                "Apathic Acid",
+                                "Beerse Brew",
+                                "Concentrate of Caducues",
+                                "Distillate of Discovry",
+                                "Essence of Ephiphaneia",
+                                "Four in December",
+                                "Granules of Geheref",
+                                "Kar-Hamel Mooh",
+                                "Lucifer's Liquid",
+                                "Noospherol",
+                                "Oil of John's son",
+                                "Powder of Perlimpinpin",
+                                "Spirit of Scienza",
+                                "Zest of Zen"))
+names_garden <- data.frame(garden = c(1,2),
+                           Garden_name = c("North","South"))
+names_type <- data.frame(species = c(1,2),
+                         Type_name = c("Floribuna","Hybrid Tea"))
+bin_data_G3<- merge(bin_data_G3,names_df,by="compound")
+bin_data_G3<- merge(bin_data_G3,names_garden,by="garden")
+bin_data_G3<- merge(bin_data_G3,names_type,by="species")
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+bin_data_G3 <- bin_data_G3 %>% arrange(compound) #Sorted by compound
+
+# For each compound, I look at each day how many of the flowers are still fresh
+fresh_prob <- bin_data_G3 %>% filter(name != 'Distilled water') %>%  group_by(name, days, Type_name, Garden_name) %>% summarize(prob=sum(fresh)/length(compound)) 
+
+# Only for water
+fresh_prob_water <- bin_data_G3 %>% filter(name == 'Distilled water') %>% group_by(name, days, Type_name, Garden_name)  %>% summarize(prob=sum(fresh)/length(compound)) 
+
+ggplot(fresh_prob, aes(days, prob, col=factor(name))) + 
+  geom_smooth(se=F, linewidth=0.7, method=glm,method.args = list(family = "binomial")) +
+  geom_smooth(data = fresh_prob_water, aes(x = days, y = prob), color = 'black', linetype = 5, se = F, method=glm,method.args = list(family = "binomial")) +
+  labs(color = "Compound",
+       x = "Days",
+       y = "Probability of being fresh") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 10)) +
+  facet_grid(Garden_name~Type_name)
+
+```
+

@@ -1,0 +1,93 @@
+---
+title: "GEE analysis"
+author: "Elisa Verhofstadt"
+date: "2023-05-16"
+output: html_document
+---
+
+```{r}
+library(readr)
+setwd("C:/Users/elisa/Mijn Drive/First Master year 2022 - 2023/Semester 2/Project - Multivariate and Hierarchical data/Project discovering associations/Final report")
+count_data_G3 <- read_csv("count_data_G3.csv")
+
+count_data_G3_matrix <- na.omit(as.matrix(count_data_G3))
+bin_data_G3 <- NULL
+
+for (i in 1:nrow(count_data_G3_matrix)){
+  # The maximum number of days is 25 so we have 26 rows (on day 26 all roses are dead)
+  mx = matrix(c(count_data_G3_matrix[i, ], 1), ncol=8, nrow=30, byrow=T)
+  # Every day after the day the rose dies, the binary indicator is set to 0
+  mx[(mx[1,7] + 1) : 30, 8] = 0
+  mx[, 7] = 1:30
+  bin_data_G3 = rbind(bin_data_G3, mx)
+}
+bin_data_G3 = as.data.frame(bin_data_G3)
+colnames(bin_data_G3) = c("subplotID", "flowerID", "garden","species", "rater", "compound", "days", "fresh")
+
+```
+## Try different correlation structures
+
+```{r}
+# autoregressive correlation structure (lag 1)
+library(gee)
+library(MuMIn)
+bin_gee_auto <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'AR-M', data = bin_data_G3, Mv = 1)
+summary(bin_gee_auto)
+QIC(bin_gee_auto)
+```
+
+```{r}
+# exchangeable correlation structure
+bin_gee_exch <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'exchangeable', data = bin_data_G3)
+summary(bin_gee_exch)
+QIC(bin_gee_exch)
+```
+
+```{r}
+# unstructured correlation: too intensive to run
+# bin_gee_unstr <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'unstructured', data = bin_data_G3)
+# summary(bin_gee_unstr)
+# QIC(bin_gee_unstr)
+
+```
+
+```{r}
+# independence correlation structure
+bin_gee_ind <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'independence', data = bin_data_G3)
+summary(bin_gee_ind)
+QIC(bin_gee_ind)
+
+```
+
+```{r}
+# autoregressive correlation structure : lag > 1
+qic_autoregr <- data.frame(Lag = numeric(), QIC = numeric(), stringsAsFactors = FALSE)
+for (i in 2:26){
+  bin_gee_auto2 <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'AR-M', data = bin_data_G3, Mv = i)
+  print(bin_gee_auto2)
+  new_row <- data.frame(Lag = i, Column2 = QIC(bin_gee_auto2))
+  qic_autoregr <- rbind(qic_autoregr, new_row)
+}
+
+```
+
+## Adjusted p-values
+```{r}
+coef(summary(bin_gee_auto))
+pval_two_sided <- 2*pnorm(abs(coef(summary(bin_gee_auto)))[,5], lower.tail = FALSE)
+pval_one_sided <- pnorm(coef(summary(bin_gee_auto))[,5], lower.tail = FALSE)
+pval_ajusted <- p.adjust(pval_one_sided[5:18], 'holm')
+reshape2::melt(format(pval_two_sided, scientific = FALSE))
+reshape2::melt(format(pval_ajusted, scientific = FALSE))
+```
+
+## Pairwise comparison
+```{r}
+# library(lsmeans)
+# per_compound <- lsmeans(bin_gee_auto, ~compound*days)
+# contrast(per_comound, alpha=0.05, interaction = TRUE, method="pairwise", adjust=NULL)
+
+lstrends(bin_gee_auto, pairwise ~ compound, var = "days", adjust = NULL)
+
+```
+

@@ -1,0 +1,116 @@
+---
+title: "Poisson regression"
+author: "Elisa Verhofstadt"
+date: "2023-05-16"
+output: html_document
+---
+
+```{r}
+library(readr)
+setwd("C:/Users/elisa/Mijn Drive/First Master year 2022 - 2023/Semester 2/Project - Multivariate and Hierarchical data/Project discovering associations/Final report")
+count_data_G3 <- read_csv("count_data_G3.csv")
+count_data_G3 <- na.omit(count_data_G3)
+# merge with names
+names_df <- data.frame(compound = c(1:15),
+                       name = c("Distilled water",
+                                "Apathic Acid",
+                                "Beerse Brew",
+                                "Concentrate of Caducues",
+                                "Distillate of Discovery",
+                                "Essence of Ephiphaneia",
+                                "Four in December",
+                                "Granules of Geheref",
+                                "Kar-Hamel Mooh",
+                                "Lucifer's Liquid",
+                                "Noospherol",
+                                "Oil of John's son",
+                                "Powder of Perlimpinpin",
+                                "Spirit of Scienza",
+                                "Zest of Zen"))
+count_data_G3<- merge(count_data_G3,names_df,by="compound")
+names_garden <- data.frame(garden = c(1,2),
+                           Garden_name = c("North","South"))
+names_type <- data.frame(species = c(1,2),
+                         Type_name = c("Floribuna","Hybrid Tea"))
+count_data_G3<- merge(count_data_G3,names_df,by="compound")
+count_data_G3<- merge(count_data_G3,names_garden,by="garden")
+count_data_G3<- merge(count_data_G3,names_type,by="species")
+
+```
+
+
+
+```{r}
+# boxplot
+library(ggplot2)
+
+# relevel compounds
+count_data_G3$name <- factor(count_data_G3$name.x,
+    levels = c("Distilled water",
+               "Apathic Acid",
+               "Beerse Brew",
+                "Concentrate of Caducues",
+                                "Distillate of Discovery",
+                                "Essence of Ephiphaneia",
+                                "Four in December",
+                                "Granules of Geheref",
+                                "Kar-Hamel Mooh",
+                                "Lucifer's Liquid",
+                                "Noospherol",
+                                "Oil of John's son",
+                                "Powder of Perlimpinpin",
+                                "Spirit of Scienza",
+                                "Zest of Zen"),ordered = TRUE)
+
+
+ggplot(count_data_G3, aes(compound, tot.vase.days, fill = as.factor(name))) +
+  geom_boxplot() +
+  labs(
+    y = "Rose fresh in days",
+    x = "Compound",
+    fill = "Compound"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("black", "#F8766D", "#E38900", "#C49A00", "#99A800", "#53B400", "#00BC56", "#00C094", "#00BFC4", "#00B6EB", "#06A4FF", "#A58AFF", "#DF70F8", "#FB61D7", "#FF66A8")) +
+  guides(fill = guide_legend(override.aes = list(color = c("black", "#F8766D", "#E38900", "#C49A00", "#99A800", "#53B400", "#00BC56", "#00C094", "#00BFC4", "#00B6EB", "#06A4FF", "#A58AFF", "#DF70F8", "#FB61D7", "#FF66A8")))) +
+    theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  facet_grid(Garden_name~Type_name)
+```
+```{r}
+# model
+count_data_G3$name <- as.factor(count_data_G3$name)
+contrasts(count_data_G3$name) <- contr.treatment(15, base = 5) # distilled water as reference
+
+library(lme4)
+fit1 <-glmer(tot.vase.days~ name + (1|subplotID) + (1|rater) + as.factor(garden) + as.factor(species) , family=poisson(link = log),data=count_data_G3,control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)))
+summary(fit1)
+plot(fit1)
+```
+
+```{r}
+# adjusted p-values
+zval <- coef(summary(fit1))[,3]
+# only for compound effects
+zval <- zval[2:15]
+
+# from two-side to one-sided: H1: beta > 0 
+one_sided_pval <- pnorm(zval,lower.tail = FALSE)
+
+# holm-bonferroni correction
+adjusted_pval <- p.adjust(one_sided_pval, "holm")
+
+format(adjusted_pval, scientific = FALSE)
+```
+
+```{r}
+# multiple comparisons
+library(multcomp)
+pairwise <- rbind(c(0,-1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0),
+                  c(0,1,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0),
+                  c(0,0,1,0,0,-1,0,0,0,0,0,0,0,0,0,0,0))
+summary(glht(fit1,pairwise),test=univariate())
+
+```
+
+
