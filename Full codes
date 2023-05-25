@@ -1,1 +1,296 @@
 
+```{r, message=F}
+library(readr)
+# setwd("/Users/macbookair/Documents/UHasselt:Master1:Sem2/Project/Black tulip/Final report/")
+count_data_G3 <- read_csv("count_data_G3.csv")
+gaussian_data_G3 <- read_csv("gaussian_data_G3.csv")
+```
+
+```{r}
+#missing data pattern for both experiments (count and gaussian)
+library(VIM)
+aggr_plot_count <- aggr(count_data_G3, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Missing data Pattern"))
+
+aggr_plot_gaussian <- aggr(gaussian_data_G3, col=c('navyblue','red'), numbers=TRUE, sortVars=FALSE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Msising data pattern"))
+
+# Remove NAs
+experiment <- na.omit(count_data_G3)
+experiment2 <- na.omit(gaussian_data_G3)
+```
+
+```{r}
+#Boxplots of tot days per compound 
+library(ggplot2)
+library(dplyr)
+ggplot(experiment, aes(compound, tot.vase.days, col=as.factor(compound))) + geom_boxplot() + 
+  labs(colour="Compound", title="Total vase days per compound") + theme(text = element_text(size = 15), plot.title = element_text(size = 20, face="bold"))
+
+boxplot <- ggplot(experiment, aes(compound, tot.vase.days, col=as.factor(compound))) + geom_boxplot() + 
+  labs(colour="Compound", title="Total vase days per compound") + theme(text = element_text(size = 15), plot.title = element_text(size = 20, face="bold")) 
+
+jpeg(file="Boxplot.jpeg")
+boxplot
+dev.off()
+# Compute summary statistics 
+means <- tapply(experiment$tot.vase.days, experiment$compound, mean)
+medians <- tapply(experiment$tot.vase.days, experiment$compound, median)
+variances <- tapply(experiment$tot.vase.days, experiment$compound, var)
+counts <- experiment %>% count(compound)
+summary_stats <- data.frame(Mean = means, Median = medians, Variance = variances, Number_of_roses = counts[,2])
+
+#Gaussian  --> compute the summary statistics at level of the difference between the last and the first day petal width
+
+means_g <- c()
+median_g <- c()
+variances_g <- c()
+
+for (i in 1:15){
+  diff <- experiment2$T_20[experiment2$Compound == i] - experiment2$T_0[experiment2$Compound == i]
+  means_g <- c(means_g, mean(diff))
+  median_g <-c(median_g, median(diff))
+  variances_g <- c(variances_g, var(diff))
+}
+
+counts_g <- experiment2 %>% count(Compound)
+summary_stats_g <- data.frame(Mean = means_g, Median = median_g, Variance = variances_g, Number_of_roses = counts_g[,2])
+
+
+rownames(summary_stats) <- c("Distilled water", "Apathic Acid", 
+                             "Beerse Brew", "Concentrate of Caducues", "Distillate of Discovry",
+                             "Essence of Epiphaneia", "Four in December", "Granules of Geheref", 
+                             "Kar-Hamel Mooh", "Lucifer's Liquid", "Noospherol", "Oil of John's son",
+                             "Powder of Perlimpinpin", "Spirit of Scienza", "Zest of Zen")
+
+
+rownames(summary_stats_g) <- c("Distilled water", "Apathic Acid", 
+                             "Beerse Brew", "Concentrate of Caducues", "Distillate of Discovry",
+                             "Essence of Epiphaneia", "Four in December", "Granules of Geheref", 
+                             "Kar-Hamel Mooh", "Lucifer's Liquid", "Noospherol", "Oil of John's son",
+                             "Powder of Perlimpinpin", "Spirit of Scienza", "Zest of Zen")
+# install.packages("kableExtra")
+library(kableExtra)
+# knitr::kable(summary_stats, full_width=F)
+kbl(summary_stats) %>% kable_paper(bootstrap_options = "striped", full_width = F)
+kbl(summary_stats_g) %>% kable_paper(bootstrap_options = "striped", full_width = F)
+
+library(xtable)
+print(xtable(summary_stats, type="latex"), file="summary.tex")
+print(xtable(summary_stats_g, type="latex"), file="summary.tex")
+
+# summary_stats
+
+```
+
+```{r}
+# I checked and there are only missing values for tot.vase.days
+raters_missing <- count_data_G3$rater[is.na(count_data_G3$tot.vase.days)]
+sum(raters_missing==8)
+
+# Something isnt right with the histogram because 1 should be equal to 4 and the difference should not be that large
+hist(raters_missing, breaks=c(0:8))
+
+# All raters have 9 or 10 missing values except rater 5 has 5 and rater 6 has 11
+
+garden_missing <- count_data_G3$garden[is.na(count_data_G3$tot.vase.days)]
+sum(garden_missing==2)
+
+# There are 30 missings for the Northern garden and 42 for the Southern garden (from the 600 per garden)
+
+compound_missing <- count_data_G3$compound[is.na(count_data_G3$tot.vase.days)]
+sum(compound_missing==1)
+hist(compound_missing, freq=F, breaks=c(0:15))
+```
+# Distribution of flowers over plots
+```{r}
+plots <- experiment %>% group_by(subplotID) %>% summarize(count=length(subplotID))
+hist(plots$count)
+
+```
+
+# Modelling (updated 3/5)
+Here we use the mixed effect model for Poisson setting
+````{r}
+library(lme4)
+# Poisson distribution, approximation =  adaptive Gauss-Hermite quadrature, crossed random effect
+fit1 <-glmer(tot.vase.days~ as.factor(compound) + (1|subplotID) +(1|rater) + as.factor(garden) + as.factor(species) , family=poisson(link = log),data=experiment,control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)))
+summary(fit1)
+
+# Poisson distribution, approximation =  adaptive Gauss-Hermite quadrature, nested random effect : not our case
+# see link: https://stats.stackexchange.com/questions/228800/crossed-vs-nested-random-effects-how-do-they-differ-and-how-are-they-specified
+# https://besjournals.onlinelibrary.wiley.com/cms/asset/908200cf-7709-47e2-9a0a-f18e6f58d97d/mee3251-fig-0001-m.jpg
+fit2 <-glmer(tot.vase.days~ as.factor(compound) + (1|subplotID/rater) + as.factor(garden) + as.factor(species) , family=poisson(link = log),data=experiment,control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)))
+summary(fit2)
+
+```
+
+```{r}
+#transforming count to binary longitudinal
+#summary(count_data_G3$tot.vase.days)
+count_data_G3_matrix <- na.omit(as.matrix(count_data_G3))
+bin_data_G3 <- NULL
+
+for (i in 1:nrow(count_data_G3_matrix)){
+  # The maximum number of days is 25 so we have 26 rows (on day 26 all roses are dead)
+  mx = matrix(c(count_data_G3_matrix[i, ], 1), ncol=8, nrow=30, byrow=T)
+  # Every day after the day the rose dies, the binary indicator is set to 0
+  mx[(mx[1,7] + 1) : 30, 8] = 0
+  mx[, 7] = 1:30
+  bin_data_G3 = rbind(bin_data_G3, mx)
+}
+bin_data_G3 = as.data.frame(bin_data_G3)
+colnames(bin_data_G3) = c("subplotID", "flowerID", "garden","species", "rater", "compound", "days", "fresh")
+#write.csv(bin_data_G3, "bin_data_G3.csv")
+
+#we have now final dataset for count, binary, and gaussian (i haven't remove NAs for count and gaussian I think)
+```
+
+```{r S-curve, warning=F}
+bin_data_G3 <- bin_data_G3 %>% arrange(compound) #Sorted by compound
+
+# For each compound, I look at each day how many of the flowers are still fresh
+fresh_prob <- bin_data_G3 %>% group_by(compound, days) %>% summarize(prob=sum(fresh)/length(compound)) 
+
+ggplot(fresh_prob, aes(days, prob, col=factor(compound))) + geom_smooth(se=F, linewidth=0.7, method=glm,method.args = list(family = "binomial"))
+
+```
+
+```{r S-cuve per compound, warning=F}
+fresh_prob_compound <- bin_data_G3 %>% group_by(compound, days, subplotID) %>% summarize(prob=sum(fresh)/length(subplotID)) 
+
+ggplot(fresh_prob_compound[fresh_prob_compound$compound==8,], aes(days, prob, col=factor(subplotID))) + geom_smooth(se=F, linewidth=0.7, method=glm,method.args = list(family = "binomial"))
+```
+
+```{r}
+# Data exploration of Gaussian data
+new_gaussian_data <- gaussian_data_G3[-c(2,3,4,5,6)] # remove the compound, rater etc
+new_gaussian_data <-t(new_gaussian_data)
+new_gaussian_data <- new_gaussian_data[-1,]
+summary(new_gaussian_data)
+plot(new_gaussian_data[,1], type = "l", col = 1, main = "Change in diameter of rose over time")  # Plot with Base R
+lines(new_gaussian_data[,2], col = 2)
+lines(new_gaussian_data[,3], col = 3)
+lines(new_gaussian_data[,4], col = 4)
+lines(new_gaussian_data[,5], col = 5)
+lines(new_gaussian_data[,6], col = 6)
+lines(new_gaussian_data[,7], col = 7)
+lines(new_gaussian_data[,8], col = 8)
+lines(new_gaussian_data[,9], col = 9)
+lines(new_gaussian_data[,10], col = 10)
+lines(new_gaussian_data[,11], col = 11)
+lines(new_gaussian_data[,12], col = 12)
+lines(new_gaussian_data[,13], col = 13)
+lines(new_gaussian_data[,14], col = 14)
+lines(new_gaussian_data[,15], col = 15)
+lines(new_gaussian_data[,16], col = 16)
+lines(new_gaussian_data[,17], col = 17)
+lines(new_gaussian_data[,18], col = 18)
+lines(new_gaussian_data[,19], col = 19)
+lines(new_gaussian_data[,20], col = 20)
+lines(gaussian_data_G3$Flower_index, gaussian_data_G3$T_1, col = 3)
+```
+
+
+```{r}
+#Group the data by compound? Make multiple plots, one per compound?
+par(mfrow=c(2,2))
+
+for (i in 1:15){
+  compound <- gaussian_data_G3[gaussian_data_G3$Compound==i,]
+  compound <-t(compound)
+  compound <- compound[-c(1:6),]
+  plot(compound[,1], type = "l", col = 1, main = paste0("Change in diameter in compound " ,i), ylim=c(0,15))
+  lines(compound[,2], col=2)
+  lines(compound[,3], col=3)
+  lines(compound[,4], col=4)
+  lines(compound[,5], col=5)
+  lines(compound[,6], col=6)
+  lines(compound[,7], col=7)
+  lines(compound[,8], col=8)
+  lines(compound[,9], col=9)
+  lines(compound[,10], col=10)
+  lines(compound[,11], col=11)
+  lines(compound[,12], col=12)
+}
+
+
+```
+
+
+```{r}
+# Using ggplot2 # To do this evening
+library(ggplot2)
+#new_gaussian_data <- gaussian_data_G3[-c(2,3,4,5,6)]
+new_gaussian_data <-t(gaussian_data_G3[-1,])
+# Reshape the data
+data_gaussian <- data.frame(y=c(new_gaussian_data[,1],new_gaussian_data[,2],new_gaussian_data[,3],new_gaussian_data[,4],new_gaussian_data[,5],new_gaussian_data[,6],new_gaussian_data[,7],new_gaussian_data[,8],new_gaussian_data[,9],new_gaussian_data[,10],new_gaussian_data[,11],new_gaussian_data[,12],new_gaussian_data[,13],new_gaussian_data[,14],new_gaussian_data[,15],new_gaussian_data[,16],new_gaussian_data[,17],new_gaussian_data[,18],new_gaussian_data[,19],new_gaussian_data[,20]),
+                       group = c(rep("T_0", 20,
+                                 rep("T_1", 20),
+                                 rep("T_2", 20),
+                                 rep("T_3", 20),
+                                 rep("T_4", 20),
+                                 rep("T_5", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20),
+                                 rep("T_6", 20))))
+```
+```{r}
+#Plots
+
+```
+
+```{r}
+#Count Endpoint Models
+```
+
+
+```{r}
+#Binary Endpoint Models --> GEE with not compound effects
+library(gee)
+bin_data_G3 <- bin_data_G3 %>% arrange(subplotID, flowerID)
+bin_gee_ind <- gee(fresh ~ garden + species + days + days:as.factor(compound), family = binomial(link = 'logit'), id = c(flowerID), corstr = 'independence', data = bin_data_G3)
+
+summary(bin_gee_ind)
+
+bin_gee_exch <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'exchangeable', data = bin_data_G3)
+
+summary(bin_gee_exch)
+
+bin_gee_auto <- gee(fresh ~ garden + species + days +  days:as.factor(compound), family = binomial(link = 'logit'), id = flowerID, corstr = 'AR-M', data = bin_data_G3, Mv = 1)
+
+summary(bin_gee_auto)
+library(parameters)
+model_parameters(bin_gee_auto, robust=T, ci_method = "wald")
+```
+
+```{r}
+#compute the pvalues 
+significance <- data.frame(estimates = coef(summary(bin_gee_auto))[, 5])
+
+p_value <- c()
+sign <- rep(' ', 4)
+for(value in significance$estimates){
+  if (value > 0){p_value <- c(p_value, pnorm(value, lower.tail = F))}
+  else{p_value <- c(p_value, pnorm(value))}
+}
+
+for(value in p_value[5:length(p_value)]){
+  if(value < 0.05/14){sign <- c(sign, '*')}
+  else{sign <- c(sign, ' ')}
+}
+
+significance$pvalue <- p_value
+significance$sign <- sign
+significance
+```
